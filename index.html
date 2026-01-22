@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <link rel="manifest" href="manifest.json">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Simple Interval Timer</title>
+        <style>
+            * {
+                font-family: Arial, sans-serif;
+                font-size: 1.2rem;
+                box-sizing: border-box;
+            }
+            body {
+                --col-white: #f0f0f0;
+                --col-lightgrey: #e0e0e0;
+                --col-darkgrey: #bbbbbb;
+                --col-black: #444444;
+
+                width: 100vw;
+                height: 100vh;
+                padding: 0;
+                margin: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                background: var(--col-white);
+                color: var(--col-black);
+            }
+            section {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 100%;
+                max-width: 240px;
+                max-height: 320px;
+                padding: 10px;
+            }
+            span {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+            }
+            h2 {
+                text-transform: uppercase;
+                margin: 0;
+            }
+            button {
+                margin: 0;
+                line-height: 0;
+                padding: 1.0rem 1.2rem;
+                width: 100%;
+                border: 2px var(--col-black) solid;
+                border-radius: 6px;
+                background: var(--col-white);
+                color: var(--col-black);
+            }
+            button:hover {
+                background: var(--col-lightgrey);
+            }
+            label {
+                display: flex;
+                flex-direction: column;
+                margin: 0.1rem 0;
+                width: 100%;
+                color: var(--col-black);
+            }
+            input {
+                margin: 0.1rem 0;
+                padding: 0.4rem 0.6rem;
+                border: 2px var(--col-black) solid;
+                border-radius: 6px;
+                background: var(--col-white);
+                color: var(--col-black);
+            }
+            .toggledon { background: var(--col-darkgrey); }
+            .divider { flex-grow: 1; height: 100%; }
+            .hidden { display: none; }
+            .progressbar {
+                width: 200px;
+                aspect-ratio: 1 / 1;
+                font-size: 4rem;
+                color: var(--col-black);
+
+                margin: 0.8rem auto 0.4rem auto;
+                border-radius: 50%;
+                display: grid;
+                place-items: center;
+
+                background: conic-gradient(
+                    var(--col-darkgrey) var(--progress, 0),
+                    var(--col-black) 0%
+                );
+            }
+            .progressbar::after {
+                content: attr(aria-valuenow);
+                background: var(--col-white);
+                border-radius: inherit;
+                width: calc(100% - 32px);
+                aspect-ratio: 1 / 1;
+                display: grid;
+                place-items: center;
+            }
+        </style>
+    </head>
+    <body>
+        <section id="settings">
+            <label for="input-prep">
+                Preparation
+                <input id="input-prep" type="number" value="5" min="0" max="999" required />
+            </label>
+            <label for="input-rest">
+                Rest
+                <input id="input-rest" type="number" value="0" min="0" max="999" required />
+            </label>
+            <label for="input-interval">
+                Interval
+                <input id="input-interval" type="number" value="60" min="0" max="999" required />
+            </label>
+            <div class="divider"></div>
+            <button id="btn-start">►</button>
+        </section>
+        <section id="instance" class="hidden">
+            <h2 id="status">Prepare</h2>
+            <div id="timer" class="progressbar" role="progressbar" aria-valuenow="0"></div>
+            <div class="divider"></div>
+            <span>
+                <button id="btn-pause" style="margin-right: 0.2rem">⏯</button>
+                <button id="btn-stop" style="margin-left: 0.2rem">⏹</button>
+            </span>
+        </section>
+        <script>
+            var audioContext = new AudioContext();
+            var volume = audioContext.createGain();
+            volume.connect(audioContext.destination);
+            volume.gain.value = 0.8;
+
+            var pages = {
+                settings: document.querySelector("#settings"),
+                instance: document.querySelector("#instance"),
+            };
+
+            var statusNode = document.querySelector("#status");
+            var timerNode = document.querySelector("#timer");
+            var startBtn = document.querySelector("#btn-start");
+            var pauseBtn = document.querySelector("#btn-pause");
+            var stopBtn = document.querySelector("#btn-stop");
+
+            // Settings vars
+            var prepTime = 5;
+            var restTime = 0;
+            var intervalTime = 60;
+
+            // Instance vars
+            var timeMax = 0;
+            var timeLeft = 0;
+            var round = 0;
+            var mode = 0; // 0 = run, 1 = rest, 2 = prepare
+            var timerHandle = 0;
+
+            function clamp(v, min, max) { return Math.max(min, Math.min(v, max)); }
+
+            function setInstanceTime(value) { timeMax = value; timeLeft = value; }
+
+            function updateStatus() {
+                if (!timerHandle)
+                    statusNode.innerHTML = "Paused";
+                else if (mode === 0)
+                    statusNode.innerHTML = "Round " + round;
+                else if (mode === 1)
+                    statusNode.innerHTML = "Rest";
+                else
+                    statusNode.innerHTML = "Prepare";
+            }
+
+            function updateTimer(value, max) {
+                var progress = (1 - ((value - 1) / max)) * 100;
+                timerNode.setAttribute("aria-valuenow", value);
+                timerNode.style.setProperty("--progress", progress + "%");
+            }
+
+            function setPage(pageName) {
+                Object.entries(pages).forEach(function (entry) {
+                    entry[1].className = entry[0] === pageName
+                        ? ""
+                        : "hidden";
+                })
+            }
+
+            function playSine(length) {
+                var osc = audioContext.createOscillator();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(440, audioContext.currentTime);
+                osc.connect(volume);
+                osc.start(audioContext.currentTime);
+                osc.stop(audioContext.currentTime + length);
+            }
+
+            function processTick() {
+                timeLeft -= 1;
+                if (timeLeft < 1) {
+                    if (restTime > 0 && mode === 0) {
+                        mode = 1;
+                        setInstanceTime(restTime);
+                    } else {
+                        mode = 0;
+                        round += 1;
+                        setInstanceTime(intervalTime);
+                    }
+                    updateStatus();
+                    playSine(0.6);
+                }
+                else if (timeLeft < 4) {
+                    playSine(0.2);
+                }
+                updateTimer(timeLeft, timeMax);
+                timerHandle = setTimeout(processTick, 1000);
+            }
+
+            function onStart(ev) {
+                ev.preventDefault();
+                prepTime = clamp(document.querySelector("#input-prep").value, 0, 999);
+                restTime = clamp(document.querySelector("#input-rest").value, 0, 999);
+                intervalTime = clamp(document.querySelector("#input-interval").value, 0, 999);
+
+                if (prepTime > 0) {
+                    round = 0;
+                    mode = 2;
+                    setInstanceTime(prepTime);
+                } else {
+                    round = 1;
+                    mode = 0;
+                    setInstanceTime(intervalTime);
+                }
+
+                updateTimer(timeLeft, timeMax);
+                timerHandle = setTimeout(processTick, 1000);
+                updateStatus();
+                setPage("instance");
+            }
+
+            function onPause(ev) {
+                ev.preventDefault();
+                if (timerHandle) {
+                    clearTimeout(timerHandle);
+                    timerHandle = 0;
+                    pauseBtn.className = "toggledon";
+                } else {
+                    timerHandle = setTimeout(processTick, 1000);
+                    pauseBtn.className = "";
+                }
+                updateStatus();
+            }
+
+            function onStop(ev) {
+                ev.preventDefault();
+                clearTimeout(timerHandle);
+                timerHandle = 0;
+                pauseBtn.className = "";
+                setPage("settings");
+            }
+
+            startBtn.onclick = onStart;
+            pauseBtn.onclick = onPause;
+            stopBtn.onclick = onStop;
+        </script>
+    </body>
+</html>

@@ -1,0 +1,8 @@
+{
+    "short_name": "Simple Interval Timer",
+    "name": "Simple Interval Timer",
+    "icons": [],
+    "start_url": "/simple-interval-timer/",
+    "scope": "/simple-interval-timer/",
+    "display": "standalone"
+}
