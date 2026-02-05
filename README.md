@@ -1,4 +1,4 @@
-Interval Timer
+Simple Interval Timer
 =========================
 
 This is a very simple interval timer, self-contained within a single HTML-file with no dependencies. Aims to work on small resolutions and all available browsers, including KaiOS etc.

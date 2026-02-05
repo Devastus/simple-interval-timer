@@ -161,6 +161,7 @@
             var round = 0;
             var mode = 0; // 0 = run, 1 = rest, 2 = prepare
             var timerHandle = 0;
+            var wakeLock = undefined;
 
             function clamp(v, min, max) { return Math.max(min, Math.min(v, max)); }
 
@@ -191,10 +192,20 @@
                 })
             }
 
+            function toggleWakeLock(isActive) {
+                if (isActive && navigator.wakeLock) {
+                    navigator.wakeLock.request()
+                        .then(res => { wakeLock = res; })
+                        .catch(err => console.error(err));
+                } else if (wakeLock) {
+                    wakeLock.release().then(() => { wakeLock = undefined; });
+                }
+            }
+
             function playSine(length) {
                 var osc = audioContext.createOscillator();
                 osc.type = "sine";
-                osc.frequency.setValueAtTime(440, audioContext.currentTime);
+                osc.frequency.setValueAtTime(880, audioContext.currentTime);
                 osc.connect(volume);
                 osc.start(audioContext.currentTime);
                 osc.stop(audioContext.currentTime + length);
@@ -241,6 +252,7 @@
                 timerHandle = setTimeout(processTick, 1000);
                 updateStatus();
                 setPage("instance");
+                toggleWakeLock(true);
             }
 
             function onPause(ev) {
@@ -249,9 +261,11 @@
                     clearTimeout(timerHandle);
                     timerHandle = 0;
                     pauseBtn.className = "toggledon";
+                    toggleWakeLock(false);
                 } else {
                     timerHandle = setTimeout(processTick, 1000);
                     pauseBtn.className = "";
+                    toggleWakeLock(true);
                 }
                 updateStatus();
             }
@@ -262,6 +276,7 @@
                 timerHandle = 0;
                 pauseBtn.className = "";
                 setPage("settings");
+                toggleWakeLock(false);
             }
 
             startBtn.onclick = onStart;
